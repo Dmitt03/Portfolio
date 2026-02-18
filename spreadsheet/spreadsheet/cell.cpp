@@ -101,6 +101,7 @@ private:
 
 // ------------- Cell ---------------------
 
+// Реализуйте следующие методы
 Cell::Cell(Sheet& sheet) : impl_(make_unique<EmptyImpl>()), sheet_(sheet) {}
 
 Cell::~Cell() = default;
@@ -208,6 +209,13 @@ void Cell::InvalidateCache() const {
 				dep_cell->InvalidateCache();
 			}
 		}
+	}
+}
+
+void Cell::AddDepency(const Position current_pos) {	// Внести позицию текущей ячейки
+	// Будем добавлять dependencies по одной из вектора references зависимой ячейки. Метод переписать
+	for (auto& current_cell_ptr : references_) {		
+		current_cell_ptr->AddDepency(current_pos);
 	}
 }
 

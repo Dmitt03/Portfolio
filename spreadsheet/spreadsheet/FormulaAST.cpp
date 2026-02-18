@@ -205,6 +205,7 @@ public:
     }
 
     double Evaluate(function<double(Position)>& args) const override {
+        // Скопируйте ваше решение из предыдущих уроков.
         if (type_ == Type::UnaryPlus) {
             return operand_->Evaluate(args);
         }

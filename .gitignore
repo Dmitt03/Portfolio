@@ -1,0 +1,5 @@
+# build dirs
+build/
+**/build/
+cmake-build-*/
+out/

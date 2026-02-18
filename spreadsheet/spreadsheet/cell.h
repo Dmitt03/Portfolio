@@ -34,6 +34,9 @@ public:
     bool IsCacheValid() const;
     void InvalidateCache() const;    
 
+    // Возвращает ячейки или кидает ошибку
+    void AddDepency(const Position current_pos);
+
     Cell* GetCellByPos(Position pos) const;
 
     bool HasCycle(const std::vector<Cell*>& new_dependencies) const;
