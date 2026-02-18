@@ -5,11 +5,12 @@
 Требуется Conan 1.x (проверено на 1.66.0).
 Скачайте код и создайте папку build в корневом каталоге проекта
 Находясь в директории build через cmd выполните следующие команды:
-conan install .. --build=missing -s build_type=Release -s compiler.runtime=MT
-cmake ..
-cmake --build . --config Release
+1) conan install .. --build=missing -s build_type=Release -s compiler.runtime=MT
+2) cmake ..
+3) cmake --build . --config Release
 Готово
 
+## Возможные сложности со сборкой
 в случае проблем с libqxx при сборке в директории /.conan/data/libpqxx/7.7.4/_/_/source/src/cmake замените содержание файла config.cmake целиком на
 
 function(detect_code_compiled code macro msg)
