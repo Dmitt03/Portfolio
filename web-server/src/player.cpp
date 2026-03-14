@@ -1,4 +1,4 @@
-п»ї#include "player.h"
+#include "player.h"
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -64,7 +64,7 @@ Token PlayerTokens::AddPlayer(Player& player) {
 		token = GenerateToken();
 	}
 
-	// Р’СЃС‚Р°РІР»СЏРµРј РІ map Рё СЃСЂР°Р·Сѓ Р±РµСЂС‘Рј РёС‚РµСЂР°С‚РѕСЂ РЅР° РєР»СЋС‡
+	// Вставляем в map и сразу берём итератор на ключ
 	token_to_player_.emplace(token, &player);
 
 	return token;
@@ -77,7 +77,7 @@ void PlayerTokens::DeletePlayer(const Token& token) {
 // ------------------- GameSession -------------------
 
 static void NormalizeIntervals(std::vector<RoadInterval>& intervals) {
-	// 1. СЃРѕСЂС‚РёСЂСѓРµРј РїРѕ Р»РµРІРѕРјСѓ РєСЂР°СЋ a (РµСЃР»Рё СЂР°РІРµРЅ, С‚Рѕ РїРѕ b)
+	// 1. сортируем по левому краю a (если равен, то по b)
 	std::sort(intervals.begin(), intervals.end(),
 		[](const RoadInterval& lhs, const RoadInterval& rhs) {
 			if (lhs.a != rhs.a) return lhs.a < rhs.a;
@@ -85,15 +85,15 @@ static void NormalizeIntervals(std::vector<RoadInterval>& intervals) {
 		}
 	);
 
-	// 2. СЃР»РёРІР°РµРј РїРµСЂРµСЃРµС‡РµРЅРёСЏ/РєРѕРЅС‚Р°РєС‚
+	// 2. сливаем пересечения/контакт
 	std::vector<RoadInterval> merged;
 	for (const auto& seg : intervals) {
 		if (merged.empty() || seg.a > merged.back().b) {
-			// РЅРѕРІС‹Р№ РЅРµРїРµСЂРµСЃРµРєР°СЋС‰РёР№СЃСЏ СЃРµРіРјРµРЅС‚
+			// новый непересекающийся сегмент
 			merged.push_back(seg);
 		}
 		else {
-			// РїРµСЂРµСЃРµС‡РµРЅРёРµ РёР»Рё РєР°СЃР°РЅРёРµ: СЂР°СЃС€РёСЂСЏРµРј РїРѕСЃР»РµРґРЅРёР№
+			// пересечение или касание: расширяем последний
 			if (seg.b > merged.back().b) {
 				merged.back().b = seg.b;
 			}
@@ -104,11 +104,11 @@ static void NormalizeIntervals(std::vector<RoadInterval>& intervals) {
 
 GameSession::GameSession(const model::Map* map_ptr, bool is_random_dog_position) : 
 	map_ptr_(map_ptr), is_random_dog_position_(is_random_dog_position){
-	// РїРѕРґРіРѕС‚РѕРІРёРј РёРЅС‚РµСЂРІР°Р»С‹
+	// подготовим интервалы
 	for (const Road& road : map_ptr->GetRoads()) {
 		auto road_start = road.GetStart();
 		auto road_end = road.GetEnd();
-		if (road.IsHorizontal()) {	// Р·РЅР°С‡РёС‚ y РєРѕРЅСЃС‚Р°РЅС‚Р°
+		if (road.IsHorizontal()) {	// значит y константа
 			if (road_start.x <= road_end.x) {
 				horizontal_intervals_[road_start.y].emplace_back(road_start.x - DELTA, road_end.x + DELTA);
 			}
@@ -126,7 +126,7 @@ GameSession::GameSession(const model::Map* map_ptr, bool is_random_dog_position)
 		}
 	}
 
-	// РќРћР РњРђР›РР—РЈР•Рњ
+	// НОРМАЛИЗУЕМ
 	for (auto& [y, intervals] : horizontal_intervals_) {
 		NormalizeIntervals(intervals);
 	}
@@ -143,7 +143,7 @@ Dog* GameSession::AddDogToMap(model::Dog dog) {
 		dog.SetPosition(RealCoord(map_ptr_->GetRoads()[0].GetStart().x, map_ptr_->GetRoads()[0].GetStart().y));
 	}
 	else {
-		dog.SetPosition(GenerateRandomPosition());	// СЂР°РЅРґРѕРјРЅРѕ СЃС‚Р°РІРёРј
+		dog.SetPosition(GenerateRandomPosition());	// рандомно ставим
 	}
 
 	dogs_.push_back(std::move(dog));
@@ -163,7 +163,7 @@ std::deque<Dog>& GameSession::GetDogs() {
 }
 
 model::RealCoord GameSession::GenerateRandomPosition() const {
-	// Р•СЃР»Рё РїРѕ РєР°РєРѕР№-С‚Рѕ РїСЂРёС‡РёРЅРµ РЅРµС‚ РєР°СЂС‚С‹ РёР»Рё РґРѕСЂРѕРі
+	// Если по какой-то причине нет карты или дорог
 	if (!map_ptr_) {
 		return model::RealCoord{ 0.0, 0.0 };
 	}
@@ -173,10 +173,10 @@ model::RealCoord GameSession::GenerateRandomPosition() const {
 		return model::RealCoord{ 0.0, 0.0 };
 	}
 
-	// thread_local, С‡С‚РѕР±С‹ РЅРµ РґРµСЂРіР°С‚СЊ std::random_device РєР°Р¶РґС‹Р№ СЂР°Р·
+	// thread_local, чтобы не дергать std::random_device каждый раз
 	static thread_local std::mt19937_64 rng{ std::random_device{}() };
 
-	// РІС‹Р±РёСЂР°РµРј СЃР»СѓС‡Р°Р№РЅСѓСЋ РґРѕСЂРѕРіСѓ
+	// выбираем случайную дорогу
 	std::uniform_int_distribution<size_t> pick_road(0, roads.size() - 1);
 	const model::Road& road = roads[pick_road(rng)];
 
@@ -187,7 +187,7 @@ model::RealCoord GameSession::GenerateRandomPosition() const {
 	double spawn_y = 0.0;
 
 	if (road.IsHorizontal()) {
-		// РґРѕСЂРѕРіР° РёРґС‘С‚ РѕС‚ (x0, y) РґРѕ (x1, y)
+		// дорога идёт от (x0, y) до (x1, y)
 		int x_min = std::min(a.x, b.x);
 		int x_max = std::max(a.x, b.x);
 
@@ -197,10 +197,10 @@ model::RealCoord GameSession::GenerateRandomPosition() const {
 		);
 
 		spawn_x = pick_x(rng);
-		spawn_y = static_cast<double>(a.y); // y С„РёРєСЃРёСЂРѕРІР°РЅРЅС‹Р№
+		spawn_y = static_cast<double>(a.y); // y фиксированный
 	}
 	else {
-		// РґРѕСЂРѕРіР° РІРµСЂС‚РёРєР°Р»СЊРЅР°СЏ: РѕС‚ (x, y0) РґРѕ (x, y1)
+		// дорога вертикальная: от (x, y0) до (x, y1)
 		int y_min = std::min(a.y, b.y);
 		int y_max = std::max(a.y, b.y);
 
@@ -210,7 +210,7 @@ model::RealCoord GameSession::GenerateRandomPosition() const {
 		);
 
 		spawn_y = pick_y(rng);
-		spawn_x = static_cast<double>(a.x); // x С„РёРєСЃРёСЂРѕРІР°РЅРЅС‹Р№
+		spawn_x = static_cast<double>(a.x); // x фиксированный
 	}
 
 	return model::RealCoord{ spawn_x, spawn_y };
@@ -297,10 +297,10 @@ RoadInterval GameSession::GetVerticalInterval(const Dog& dog) const {
 	return *it;
 }
 
-// РІРµСЂРЅС‘Рј РїР°СЂСѓ РЅР°С‡Р°Р»СЊРЅР°СЏ РїРѕР·РёС†РёСЏ - РєРѕРЅРµС‡РЅР°СЏ
+// вернём пару начальная позиция - конечная
 std::pair<RealCoord, RealCoord> GameSession::CalculatePosition(Dog& dog, int milliseconds) {
 	Direction direction = dog.GetDirection();
-	double coef = milliseconds / 1000.0;	// РїРѕРїСЂР°РІРёР» РїСЂРµРѕР±СЂР°Р·РѕРІР°РЅРёРµ
+	double coef = milliseconds / 1000.0;	// поправил преобразование
 	RealCoord dog_speed = dog.GetSpeed();
 	RealCoord dog_start_position = dog.GetPosition();
 
@@ -312,14 +312,14 @@ std::pair<RealCoord, RealCoord> GameSession::CalculatePosition(Dog& dog, int mil
 		double with_offset_y = dog_start_position.GetY() + dog_speed.GetY() * coef;
 
 		if (direction == Direction::NORTH) {
-			// РІРІРµСЂС… => y СѓРјРµРЅСЊС€Р°РµС‚СЃСЏ => СѓРїРёСЂР°РµРјСЃСЏ РІ Р»РµРІСѓСЋ РіСЂР°РЅРёС†Сѓ РёРЅС‚РµСЂРІР°Р»Р° [a, b]
+			// вверх => y уменьшается => упираемся в левую границу интервала [a, b]
 			if (with_offset_y < interval.a) {
 				with_offset_y = interval.a;
 				dog.StopDog();
 			}
 		}
 		else { // SOUTH
-			// РІРЅРёР· => y СЂР°СЃС‚С‘С‚ => СѓРїРёСЂР°РµРјСЃСЏ РІ РїСЂР°РІСѓСЋ РіСЂР°РЅРёС†Сѓ
+			// вниз => y растёт => упираемся в правую границу
 			if (with_offset_y > interval.b) {
 				with_offset_y = interval.b;
 				dog.StopDog();
@@ -333,20 +333,20 @@ std::pair<RealCoord, RealCoord> GameSession::CalculatePosition(Dog& dog, int mil
 
 		double with_offset_x = dog_start_position.GetX() + dog_speed.GetX() * coef;
 		if (direction == Direction::EAST) {
-			// РёРґС‘Рј РЅР°РїСЂР°РІРѕ РїРѕ РёРєСЃСѓ, РѕРіСЂР°РЅРёС‡РµРЅРёРµ b]
+			// идём направо по иксу, ограничение b]
 			if (with_offset_x > interval.b) {
 				with_offset_x = interval.b;
 				dog.StopDog();
 			}
 		}
 		else {	// west
-			// РёРґС‘Рј РЅР°Р»РµРІРѕ, СЃ РѕРіСЂР°РЅРёС‡РµРЅРёРµРј [a
+			// идём налево, с ограничением [a
 			if (with_offset_x < interval.a) {
 				with_offset_x = interval.a;
 				dog.StopDog();
 			}
 		}
-		// РїРµСЂРµРјРµС‰Р°Р»РёСЃСЊ С‚РѕР»СЊРєРѕ РїРѕ x, РїРѕСЌС‚РѕРјСѓ y РѕСЃС‚Р°РІР»СЏРµРј СЃС‚Р°СЂС‹Рј
+		// перемещались только по x, поэтому y оставляем старым
 		dog.SetPosition(with_offset_x, dog_start_position.GetY());		
 	}
 	RealCoord dog_end_position = dog.GetPosition();
@@ -375,7 +375,7 @@ std::vector<model::LostObject>& GameSession::GetLostObjects() {
 Player& Players::AddDogToSession(std::string dog_name, GameSession& session) {
 	Dog dog(std::move(dog_name));
 	model::Dog* dog_ptr = session.AddDogToMap(std::move(dog));
-	// РґР»СЏ РїРѕСЃР»РµРґСѓСЋС‰РµРіРѕ РЅР°С…РѕР¶РґРµРЅРёСЏ РёРіСЂРѕРєР° РїРѕ РєР»СЋС‡Сѓ
+	// для последующего нахождения игрока по ключу
 	PlayerKey pk{ .map_id = session.GetMapPtr()->GetId(), .dog_id = dog_ptr->GetId() };
 	storage_.emplace_back(&session, dog_ptr);
 	Player& added_player = storage_.back();
@@ -412,14 +412,14 @@ GameSession* GameSessionManager::GetSessionByMapId(const model::Map::Id& id) {
 GameSession* GameSessionManager::SelectSession(const Map::Id& map_id) {
 	GameSession* session_ptr = GetSessionByMapId(map_id);
 	if (!session_ptr) {
-		// РµСЃР»Рё СЃРµСЃСЃРёРё РЅРµС‚ - СЃРѕР·РґР°РґРёРј РµС‘
+		// если сессии нет - создадим её
 		const Map* map_ptr = game_.FindMap(map_id);
 		if (!map_ptr) {
 			throw std::runtime_error("eternal error. Map not found");
 		}
 		GameSession new_session(map_ptr, is_random_dog_position_);
 
-		// РёРЅРґРµРєСЃРёСЂСѓРµРј
+		// индексируем
 		sessions_.push_back(std::move(new_session));
 		GameSession* session_ptr = &sessions_.back();
 		map_id_to_session_[map_id] = session_ptr;
@@ -429,13 +429,14 @@ GameSession* GameSessionManager::SelectSession(const Map::Id& map_id) {
 }
 
 
-// РІС‚РѕСЂС‹Рј РїР°СЂР°РјРµС‚СЂРѕРј Р±СѓРґРµС‚ РёРґС‚Рё dog id
+// вторым параметром будет идти dog id
 std::pair<Token, uint64_t> GameSessionManager::AddDogToMap(std::string name, model::Map::Id map_id) {
 	GameSession* session = SelectSession(map_id);
 
 	Player& player = players_.AddDogToSession(std::move(name), *session);
 
 	Token token = player_tokens_.AddPlayer(player);
+	player.SetToken(token);
 
 	return { token, player.GetDogId() };
 }
@@ -450,12 +451,12 @@ Direction GameSessionManager::GetConvertedDirection(std::string_view dir) {
 	if (dir == "D") return Direction::SOUTH;
 	if (dir == "L") return Direction::WEST;
 	if (dir == "R") return Direction::EAST;
-	return Direction::NONE; // СЃСЂР°Р±РѕС‚Р°РµС‚ РµСЃР»Рё РїСѓСЃС‚Р°СЏ
+	return Direction::NONE; // сработает если пустая
 }
 
 void GameSessionManager::SetMoveDog(Player* dog_owner, std::string_view command) {
 	Direction dir = GetConvertedDirection(command);
-	// СѓР·РЅР°С‘Рј СЃРєРѕСЂРѕСЃС‚СЊ СЃРѕР±Р°РєРё РґР»СЏ РєРѕРЅРєСЂРµС‚РЅРѕР№ РєР°СЂС‚С‹
+	// узнаём скорость собаки для конкретной карты
 	double speed = dog_owner->GetSessionPtr()->GetMapPtr()->GetDogSpeed();
 	dog_owner->GetDogPtr()->SetMoveDog(dir, speed);
 }
@@ -469,7 +470,7 @@ void GameSessionManager::GenerateLoot(GameSession& session, int ms) {
 	const auto looter_count = session.GetDogs().size();
 	const auto loot_types_count = loot_map_.at(session.GetMapPtr()->GetId()).size();
 
-	// РќРµС‚ СЃРѕР±Р°Рє РёР»Рё РЅРµС‚ С‚РёРїРѕРІ Р»СѓС‚Р° вЂ” РЅРёС‡РµРіРѕ РЅРµ РіРµРЅРµСЂРёСЂСѓРµРј
+	// Нет собак или нет типов лута — ничего не генерируем
 	if (looter_count == 0 || loot_types_count == 0) {
 		return;
 	}
@@ -501,15 +502,16 @@ const double BASE_RADIUS = 0.5 / 2;
 
 void GameSessionManager::ProcessGatherEvent(GameSession& session, const std::vector<std::pair<model::RealCoord, model::RealCoord>>& all_moves) {
 	ItemGatherer item_gatherer;
-	// СЃРЅР°С‡Р°Р»Р° РґРѕР±Р°РІРёРј РІСЃРµ СЃРѕР±РёСЂР°С‚РµР»РµР№ 
-	for (const auto& [dog_id, move] : all_moves) {
-		item_gatherer.AddGatherer(Gatherer{ dog_id, move, PLAYER_RADIUS });
+	// gatherer_id в событиях коллизий - это индекс gatherer в провайдере.
+	// Значит, порядок добавления должен совпадать с порядком собак в сессии.
+	for (const auto& [start_pos, end_pos] : all_moves) {
+		item_gatherer.AddGatherer(Gatherer{ start_pos, end_pos, PLAYER_RADIUS });
 	}
-	// С‚РµРїРµСЂСЊ СЃРЅР°С‡Р°Р»Р° РґРѕР±Р°РІРёРј Р»СѓС‚ РЅР° РєР°СЂС‚Рµ, РёРЅРґРµРєСЃ РІ СЃРµСЃСЃРёРё Р±СѓРґРµС‚ СЃРѕРІРїР°РґР°С‚СЊ СЃ РёРЅРґРµРєСЃР°РјРё РїСЂРµРґРјРµС‚РѕРІ Р·РґРµСЃСЊ РїСЂСЏРјРѕ РґРѕ size
+	// теперь сначала добавим лут на карте, индекс в сессии будет совпадать с индексами предметов здесь прямо до size
 	for (const auto& item : session.GetLostObjects()) {
 		item_gatherer.AddItem(Item{ item.pos, ITEM_RADIUS });
 	}
-	// СЃСЂР°Р·Сѓ РїРѕСЃР»Рµ РїРѕС‚РµСЂСЏРЅРЅС‹С… РїСЂРµРґРјРµС‚РѕРІ Р±СѓРґСѓС‚ Р»РµР¶Р°С‚СЊ Р±Р°Р·С‹
+	// сразу после потерянных предметов будут лежать базы
 	for (const auto& office : session.GetMapPtr()->GetOffices()) {
 		item_gatherer.AddItem(Item{
 			RealCoord(office.GetPosition().x, office.GetPosition().y),
@@ -517,20 +519,20 @@ void GameSessionManager::ProcessGatherEvent(GameSession& session, const std::vec
 			});
 	}
 	std::vector<GatheringEvent> gathering_events = FindGatherEvents(item_gatherer);
-	// РЅР°С‡РЅС‘Рј СЃР±РѕСЂ
+	// начнём сбор
 	for (const auto& gathering_event : gathering_events) {
 
-		// РїРѕР»СѓС‡Р°РµРј СЂРµР°Р»СЊРЅРѕРіРѕ РёРіСЂРѕРєР° РїРѕ РёРЅРґРµРєСЃСѓ
+		// получаем реального игрока по индексу
 		Dog& current_dog = session.GetDogs().at(gathering_event.gatherer_id);
 
-		// РµСЃР»Рё СЌС‚Рѕ Р±Р°Р·Р° (Р±Р°Р·С‹ Р»РµР¶Р°С‚ РїРѕСЃР»Рµ РІСЃРµС… РѕР±СЉРµРєС‚РѕРІ, С‚Рѕ СЃР±СЂР°СЃС‹РІР°РµРј СЂСЋРєР·Р°Рє)
+		// если это база (базы лежат после всех объектов, то сбрасываем рюкзак)
 		if (gathering_event.item_id >= session.GetLostObjects().size()) {
-			// РѕС‚СЃСЋРґР° Р±СѓРґРµРј Р±СЂР°С‚СЊ РѕС‡РєРё Р·Р° С‚РёРї Р»СѓС‚Р°
+			// отсюда будем брать очки за тип лута
 			std::vector<extra_data::LootType>& objects_with_values = loot_map_.at(session.GetMapPtr()->GetId());
 			std::vector<model::BagItem> released_loot = current_dog.ReleaseLootFromBag();
 
 			for (const auto exchanging_object : released_loot) {
-				// РїРѕ РёРЅРґРµРєСЃСѓ РЅР°С…РѕРґРёРј СЃС‚РѕРёРјРѕСЃС‚СЊ
+				// по индексу находим стоимость
 				int current_object_value = objects_with_values.at(exchanging_object.type).GetValue();			
 				current_dog.AddScore(current_object_value);
 			}
@@ -538,24 +540,24 @@ void GameSessionManager::ProcessGatherEvent(GameSession& session, const std::vec
 			continue;
 		}
 
-		// РїРѕР»СѓС‡Р°РµРј СЂРµР°Р»СЊРЅС‹Р№ РѕР±СЉРµРєС‚ РїРѕ РёРЅРґРµРєСЃСѓ
+		// получаем реальный объект по индексу
 		LostObject& lo = session.GetLostObjects().at(gathering_event.item_id);
 		if (lo.is_collected) {
 			continue;
 		}
 
-		// РїСЂРѕРІРµСЂСЏРµРј, РµСЃС‚СЊ Р»Рё РјРµСЃС‚Рѕ РІ СЂСЋРєР·Р°РєРµ
+		// проверяем, есть ли место в рюкзаке
 		int bag_size = session.GetMapPtr()->GetBagCapacity();
 		if (current_dog.GetLootInBag().size() == bag_size) {
 			continue;
 		}
 
-		// РµСЃР»Рё РІСЃРµ РєСЂСѓРіРё Р°РґР° РїСЂРѕС€Р»Рё, РјРѕР¶РЅРѕ СЃРѕ СЃРїРѕРєРѕР№РЅРѕР№ РґСѓС€РѕР№ РєР»Р°СЃС‚СЊ РїСЂРµРґРјРµС‚ РІ СЂСЋРєР·Р°Рє
+		// если все круги ада прошли, можно со спокойной душой класть предмет в рюкзак
 		current_dog.AddLootToBag(model::BagItem{gathering_event.item_id, lo.type});
-		// РЅРµ Р·Р°Р±С‹РІР°РµРј РїРѕРјРµС‚РёС‚СЊ РµРіРѕ РєР°Рє РїРѕРґРѕР±СЂР°РЅРЅС‹Р№
+		// не забываем пометить его как подобранный
 		lo.is_collected = true;
 	}
-	// С‚РµРїРµСЂСЊ РѕС‡РёСЃС‚РёРј РєР°СЂС‚Сѓ РѕС‚ РїРѕРґРѕР±СЂР°РЅРЅС‹С… РІРµС‰РµР№
+	// теперь очистим карту от подобранных вещей
 	auto& lost_objects = session.GetLostObjects();
 	lost_objects.erase(
 		std::remove_if(lost_objects.begin(), lost_objects.end(), [](const LostObject l) {
@@ -604,26 +606,26 @@ void GameSessionManager::CheckAfk(GameSession& session, int time_in_ms) {
 		Player* p = players_.FindByDogIdAndMapId(dog_id, map_id);
 		if (!p) continue;
 
-		// РІСЃС‘ РЅСѓР¶РЅРѕРµ СЃРѕС…СЂР°РЅРёР»Рё РґРѕ СѓРґР°Р»РµРЅРёСЏ
+		// всё нужное сохранили до удаления
 		model::Dog* dog_ptr = p->GetDogPtr();
 
-		// play_time РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ double
+		// play_time должен быть double
 		const double play_time = dog_ptr->GetPlayTimeSec();
 		const int score = dog_ptr->GetScore();
 		std::string name(dog_ptr->GetName());
 
-		// С‚РѕРєРµРЅ РЅР°РґРѕ СѓРґР°Р»РёС‚СЊ РёР· token_to_player
+		// токен надо удалить из token_to_player
 		const Token tok = p->GetToken(); 
 		player_tokens_.DeletePlayer(tok);
 
-		// Р·Р°РїРёСЃСЊ РІ Р‘Р”
+		// запись в БД
 		repo_.Add(postgres::RetiredRecord{
 			.name = std::move(name),
 			.score = score,
 			.play_time = play_time
 			});
 
-		// СѓРґР°Р»РёС‚СЊ РёР· players_ Рё РёР· session
+		// удалить из players_ и из session
 		players_.DeletePlayer(dog_id, map_id);
 		session.DeleteDog(dog_ptr);
 	}
@@ -636,16 +638,21 @@ void GameSessionManager::ProcessTick(int ms) {
 		ProcessGatherEvent(session, all_moves);
 		CheckAfk(session, ms);
 	}
-	listener_->OnTick(std::chrono::milliseconds(ms));
+	if (listener_) {
+		listener_->OnTick(std::chrono::milliseconds(ms));
+	}
 }
 
 boost::json::array GameSessionManager::GetSerializedLostObjectByMapId(model::Map::Id map_id) const {
-	// РґР»СЏ РєР°Р¶РґРѕР№ РєР°СЂС‚С‹ СЃРІРѕР№ РІРµРєС‚РѕСЂ РїРѕС‚РµСЂСЏРЅРЅС‹С… РїСЂРµРґРјРµС‚РѕРІ
+	// для каждой карты свой вектор потерянных предметов
 	auto& loot_vector = loot_map_.at(map_id);
 	boost::json::array result_arr;
 	for (auto& item : loot_vector) {
 		result_arr.push_back(item.GetAsJsonObject());
 	}
-	return result_arr;	// РµСЃР»Рё РїРѕР»СЏ Р±С‹Р»Рё СЂР°СЃРїР°СЂСЃРµРЅС‹, РїРѕРЅР°РґРѕР±РёС‚СЃСЏ РѕР±СЂР°С‚РЅР°СЏ СЃР±РѕСЂРєР°, РїРѕРєР° РїСЂРѕРјРµР¶СѓС‚РѕС‡РЅС‹Р№ РІР°СЂРёР°РЅС‚
+	return result_arr;	// если поля были распарсены, понадобится обратная сборка, пока промежуточный вариант
 }
+
+
+
 
