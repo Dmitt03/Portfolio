@@ -1,0 +1,200 @@
+#pragma once
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <format>
+#include <sstream>
+#include <string>
+#include <vector>
+
+namespace common {
+constexpr uint8_t topN = 20;
+constexpr size_t kPtrForMsgType = 0;
+constexpr size_t kByteForMsgType = 1;
+
+/// delimeter for cast order price to double
+static const double PRICE_DELIMETER = 100;
+
+using ID = uint64_t;
+using Price = uint64_t;
+using Quantity = uint64_t;
+
+enum class MessageType : uint8_t { SNAPSHOT = 0, BID = 1, ASK = 2, MD_UPDATE = 3 };
+
+struct Order {
+    Order() = default;
+    Order(ID number, Price p, int qty) : id(number), price(p), quantity(qty) {}
+    ID id = 0;  /// id must always be strictly greater than 1
+    Price price = 0;
+    Quantity quantity = 0;
+    /**
+     * @brief get order's price as double
+     * @return price
+     */
+    double get_price() const;
+};
+
+inline double Order::get_price() const {
+    return static_cast<double>(price) / PRICE_DELIMETER;
+}
+
+inline bool operator==(const Order& lhs, const Order& rhs) {
+    return lhs.id == rhs.id && lhs.price == rhs.price && lhs.quantity == rhs.quantity;
+}
+
+struct Snapshot {
+    Snapshot() = default;
+    Snapshot(std::array<common::Order, topN> bids, std::array<common::Order, topN> asks);
+    std::array<common::Order, topN> topBids;
+    std::array<common::Order, topN> topAsks;
+
+    /**
+     * @brief basic funtion is get array of double
+     * @param array of Orders
+     * @return array of double
+     */
+    static std::array<double, topN> get_prices(const std::array<common::Order, topN>& arr);
+
+    /**
+     * @brief get bids prices as array of double
+     * @return array of double
+     */
+    std::array<double, topN> get_bid_prices() const;
+
+    /**
+     * @brief get asks prices as array of double
+     * @return
+     */
+    std::array<double, topN> get_ask_prices() const;
+
+    /**
+     * @brief serialize snapshor
+     * @return vector of char
+     */
+    std::vector<char> serialize() const;
+
+    /**
+     * @brief deserialize snapshot
+     * @param binary data array
+     * @return snapshot
+     */
+    static Snapshot deserialize(const std::vector<char>& data);
+};
+
+struct MDUpdate {
+    Price best_bid_price;
+    Quantity best_bid_qty;
+    Price best_ask_price;
+    Quantity best_ask_qty;
+
+    Quantity total_bid_qty;
+    Quantity total_ask_qty;
+
+    /**
+     * @brief serialize MDUpdate
+     * @return vector of char
+     */
+
+    std::vector<char> serialize() const {
+        std::vector<char> buffer(kByteForMsgType + sizeof(MDUpdate));
+        buffer[0] = static_cast<char>(MessageType::MD_UPDATE);
+        std::memcpy(buffer.data() + kByteForMsgType, this, sizeof(MDUpdate));
+        return buffer;
+    }
+
+    /**
+     * @brief deserialize MDUpdate
+     * @param data binary data array
+     * @return MDUpdate object
+     */
+    static MDUpdate deserialize(const std::vector<char>& data) {
+        if (data.size() != kByteForMsgType + sizeof(MDUpdate)) {
+            throw std::runtime_error("Deserialization error: incorrect data size");
+        }
+        MDUpdate update;
+        std::memcpy(&update, data.data() + kByteForMsgType, sizeof(MDUpdate));
+        return update;
+    }
+};
+
+inline std::vector<char> Snapshot::serialize() const {
+    size_t size = sizeof(Snapshot) + kByteForMsgType;
+    std::vector<char> buffer(size);
+    buffer[kPtrForMsgType] = static_cast<char>(MessageType::SNAPSHOT);
+
+    char* ptr_for_msg_data = buffer.data() + kByteForMsgType;
+    std::memcpy(ptr_for_msg_data, &topBids, sizeof(topBids));
+    std::memcpy(ptr_for_msg_data + sizeof(topBids), &topAsks, sizeof(topAsks));
+
+    return buffer;
+}
+
+inline Snapshot Snapshot::deserialize(const std::vector<char>& data) {
+    if (data.size() != sizeof(Snapshot) + kByteForMsgType) {
+        throw std::runtime_error("Deserialization error: incorrect data size");
+    }
+    Snapshot result;
+    const char* ptr_for_msg_data = data.data() + kByteForMsgType;
+    std::memcpy(&result.topBids, ptr_for_msg_data, sizeof(topBids));
+    std::memcpy(&result.topAsks, ptr_for_msg_data + sizeof(topBids), sizeof(topAsks));
+    return result;
+}
+
+inline std::string to_string(const Snapshot& snapshot) {
+    if (snapshot.topBids[0].id == 0 && snapshot.topAsks[0].id == 0)
+        return "";
+    std::string result = "Top Bids:\n";
+    for (const auto& bid : snapshot.topBids) {
+        if (bid.id == 0)
+            break;
+        result += std::format("Price: {}, Quantity: {}\n", bid.price, bid.quantity);
+    }
+    result += "Top Asks:\n";
+    for (const auto& ask : snapshot.topAsks) {
+        if (ask.id == 0)
+            break;
+        result += std::format("Price: {}, Quantity: {}\n", ask.price, ask.quantity);
+    }
+    return result;
+}
+
+inline std::string to_string(const MDUpdate& md_update) {
+    if (md_update.best_ask_price == 0 && md_update.best_bid_price == 0)
+        return "";
+    std::string result = std::format(
+        "Best bid price: {}\n"
+        "Bid items by this price: {}\n"
+        "Best ask price: {}\n"
+        "Ask items by this price: {}\n"
+        "Total bid quantity: {}\n"
+        "Total ask quantity: {}\n",
+        md_update.best_bid_price,
+        md_update.best_bid_qty,
+        md_update.best_ask_price,
+        md_update.best_ask_qty,
+        md_update.total_bid_qty,
+        md_update.total_ask_qty);
+    return result;
+}
+
+inline std::array<double, topN> Snapshot::get_prices(const std::array<common::Order, topN>& arr) {
+    std::array<double, topN> result;
+    for (size_t i = 0; i < topN; i++) {
+        result[i] = arr[i].get_price();
+    }
+    return result;
+}
+
+inline std::array<double, topN> Snapshot::get_bid_prices() const {
+    return get_prices(topBids);
+}
+
+inline std::array<double, topN> Snapshot::get_ask_prices() const {
+    return get_prices(topAsks);
+}
+
+inline bool operator==(const Snapshot& lhs, const Snapshot& rhs) {
+    return lhs.topBids == rhs.topBids && lhs.topAsks == rhs.topAsks;
+}
+}  // namespace common
